@@ -204,10 +204,17 @@ pub(super) fn snapshot_with_completions(
         .iter()
         .enumerate()
         .filter_map(|(index, segment)| {
-            let (text, accent) = match segment {
-                crate::app::state::TabBarStatusSegment::Zoom if zoomed => ("ZOOM".to_owned(), true),
+            let (text, accent, value_bg) = match segment {
+                crate::app::state::TabBarStatusSegment::Zoom if zoomed => {
+                    ("ZOOM".to_owned(), true, None)
+                }
                 crate::app::state::TabBarStatusSegment::Text(Some(text)) if !text.is_empty() => {
-                    (text.clone(), false)
+                    (text.clone(), false, None)
+                }
+                crate::app::state::TabBarStatusSegment::PaneVar { name, colors } => {
+                    let (text, value_bg) =
+                        app.pane_var_status(focused_pane_id.as_deref(), name, colors)?;
+                    (text, false, value_bg)
                 }
                 crate::app::state::TabBarStatusSegment::Zoom
                 | crate::app::state::TabBarStatusSegment::Text(_) => return None,
@@ -216,7 +223,7 @@ pub(super) fn snapshot_with_completions(
             Some(protocol::ClientShellTabStatusSegment {
                 text,
                 accent,
-                icon_bg: icon.as_ref().and_then(|icon| icon.bg.clone()),
+                icon_bg: value_bg.or_else(|| icon.as_ref().and_then(|icon| icon.bg.clone())),
                 icon: icon.map(|icon| icon.icon),
             })
         })
@@ -798,6 +805,74 @@ tab_bar_right = [
                 ("repo", Some("[31m\u{f07b}"), Some("mauve"))
             ]
         );
+    }
+
+    #[test]
+    fn snapshot_shows_the_focused_panes_user_var_colored_by_value() {
+        let config: crate::config::Config = toml::from_str(
+            r#"
+[ui]
+tab_bar_right = [
+  { type = "pane_var", name = "vi_mode", icon = "V", icon_bg = "overlay1", colors = { insert = "green", normal = "blue" } },
+]
+"#,
+        )
+        .expect("pane_var config");
+        let (_api_tx, api_rx) = tokio::sync::mpsc::unbounded_channel();
+        let mut app = crate::app::App::new(
+            &config,
+            crate::app::AppPolicy::TEST,
+            None,
+            api_rx,
+            crate::api::EventHub::default(),
+        );
+        let mut workspace = crate::workspace::Workspace::test_new("active");
+        let first = workspace.tabs[0].layout.focused();
+        let second = workspace.test_split(ratatui::layout::Direction::Horizontal);
+        app.state.workspaces = vec![workspace];
+        app.state.active = Some(0);
+        app.state.ensure_test_terminals();
+        let focus = |app: &mut crate::app::App, pane| {
+            app.state.workspaces[0].tabs[0].layout.focus_pane(pane);
+        };
+        let set = |app: &mut crate::app::App, pane_id, value: &str| {
+            app.state
+                .handle_app_event(crate::events::AppEvent::TerminalUserVarSet {
+                    pane_id,
+                    name: "vi_mode".into(),
+                    value: value.into(),
+                });
+        };
+        let status = |app: &crate::app::App| {
+            snapshot(app, "boot", 1, None, None)
+                .tab_bar_right
+                .into_iter()
+                .map(|segment| (segment.text, segment.icon, segment.icon_bg))
+                .collect::<Vec<_>>()
+        };
+        let pill =
+            |text: &str, bg: &str| (text.to_owned(), Some("V".to_owned()), Some(bg.to_owned()));
+
+        focus(&mut app, first);
+        assert_eq!(status(&app), [], "hidden until the pane reports");
+
+        set(&mut app, first, "insert");
+        set(&mut app, second, "visual");
+        assert_eq!(status(&app), [pill("insert", "green")]);
+        set(&mut app, first, "normal");
+        assert_eq!(status(&app), [pill("normal", "blue")]);
+
+        focus(&mut app, second);
+        assert_eq!(
+            status(&app),
+            [pill("visual", "overlay1")],
+            "unmapped values fall back to icon_bg"
+        );
+
+        set(&mut app, second, "");
+        assert_eq!(status(&app), [], "an empty value clears the var");
+        focus(&mut app, first);
+        assert_eq!(status(&app), [pill("normal", "blue")]);
     }
 
     #[test]

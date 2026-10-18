@@ -1,7 +1,7 @@
 # Pill tabs (personal fork)
 
-This branch (`pill-tabs`) adds one commit, `feat: pill tab style`, on top of an
-upstream herdr release tag. Never open PRs, issues or comments on
+This branch (`pill-tabs`) adds two commits, `feat: pill tab style` and
+`feat: pane user-var pill`, on top of an upstream herdr release tag. Never open PRs, issues or comments on
 `herdrdev/herdr`, and never push there.
 
 ## Rebase onto a new upstream release
@@ -38,8 +38,10 @@ hands every other call to the original `xcrun`.
 [ui]
 tab_style = "pill"            # default "block" keeps upstream rendering
 tab_bar_right = [
-  { type = "command", command = "basename \"$PWD\"", interval_seconds = 5,
-    icon = "\uf07b", icon_bg = "mauve" },   # icon/icon_bg render the entry as a pill
+  # icon/icon_bg render an entry as a pill. Inline tables must stay on one line.
+  { type = "command", command = "basename \"$PWD\"", interval_seconds = 5, icon = "\uf07b", icon_bg = "mauve" },
+  # Focused pane's OSC 1337 SetUserVar value; colors pick the icon block per value.
+  { type = "pane_var", name = "vi_mode", icon = "\ue7c5", icon_bg = "overlay1", colors = { insert = "green", normal = "blue", visual = "mauve", visual_line = "mauve", replace = "red" } },
 ]
 
 [ui.tab_pill]

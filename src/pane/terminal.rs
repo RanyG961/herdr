@@ -169,6 +169,8 @@ pub(crate) struct ProcessBytesResult {
     pub terminal_bells: u16,
     pub clipboard_writes: Vec<Vec<u8>>,
     pub reported_cwd: Option<std::path::PathBuf>,
+    /// OSC 1337 `SetUserVar` assignments completed by this write, in order.
+    pub user_vars: Vec<(String, String)>,
     pub terminal_responses: Vec<Bytes>,
 }
 
@@ -1367,6 +1369,7 @@ impl GhosttyPaneTerminal {
                 terminal_bells: 0,
                 clipboard_writes: Vec::new(),
                 reported_cwd: None,
+                user_vars: Vec::new(),
                 terminal_responses: Vec::new(),
             };
         };
@@ -1397,6 +1400,7 @@ impl GhosttyPaneTerminal {
             );
         }
         let terminal_title_changed = core.agent_osc_state.observe(bytes);
+        let user_vars = core.agent_osc_state.drain_user_vars();
 
         core.kitty_keyboard.observe(bytes);
         let mut terminal_responses = Vec::new();
@@ -1484,6 +1488,7 @@ impl GhosttyPaneTerminal {
             terminal_bells,
             clipboard_writes,
             reported_cwd,
+            user_vars,
             terminal_responses,
         }
     }
@@ -4162,6 +4167,26 @@ mod tests {
             latest.reported_cwd,
             Some(std::path::PathBuf::from("/tmp/iterm2"))
         );
+    }
+
+    #[test]
+    fn process_pty_bytes_reports_user_vars() {
+        let (tx, _rx) = mpsc::channel(4);
+        let terminal = crate::ghostty::Terminal::new(80, 24, 100).unwrap();
+        let pane = GhosttyPaneTerminal::new(terminal, tx.clone()).unwrap();
+        let pane_id = PaneId::from_raw(1);
+
+        let partial = pane.process_pty_bytes(pane_id, 0, b"\x1b]1337;SetUserVar=vi_mode=", &tx);
+        assert!(partial.user_vars.is_empty());
+        let completed = pane.process_pty_bytes(pane_id, 0, b"aW5zZXJ0\x07$ ", &tx);
+        assert_eq!(
+            completed.user_vars,
+            [("vi_mode".to_owned(), "insert".to_owned())]
+        );
+        assert!(pane
+            .process_pty_bytes(pane_id, 0, b"plain", &tx)
+            .user_vars
+            .is_empty());
     }
 
     #[test]

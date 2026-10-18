@@ -354,6 +354,19 @@ right_cap = "\ue0b4"
 
 Any `tab_bar_right` entry with an `icon` renders as a pill too, with the icon on an `icon_bg` block (default `accent`) followed by the entry text. This works with either tab style.
 
+A `pane_var` entry shows the focused pane's latest user variable, set by the program in the pane with the iTerm2 sequence `ESC ] 1337 ; SetUserVar=<name>=<base64 value> BEL`. The entry is hidden until the focused pane sets `name`, and an empty value clears it. `colors` maps values to icon backgrounds, which accept the same colors as `index_colors`; other values use `icon_bg`. For example, a shell can report its vi mode:
+
+```toml
+[ui]
+tab_bar_right = [
+  { type = "pane_var", name = "vi_mode", icon = "\ue7c5", icon_bg = "overlay1", colors = { insert = "green", normal = "blue", visual = "mauve", visual_line = "mauve", replace = "red" } },
+]
+```
+
+```sh
+printf '\033]1337;SetUserVar=vi_mode=%s\007' "$(printf insert | base64)"
+```
+
 ### Outer terminal window title
 
 Herdr emulates the terminals in its panes, so an `OSC 0`/`OSC 2` title written inside a pane stops at Herdr. Herdr writes its own title to the terminal it runs in, which is what window managers and terminal tab bars read:

@@ -185,6 +185,13 @@ pub enum AppEvent {
         pane_id: PaneId,
         cwd: std::path::PathBuf,
     },
+    /// A pane child set a user variable through OSC 1337 `SetUserVar`.
+    /// An empty value clears it.
+    TerminalUserVarSet {
+        pane_id: PaneId,
+        name: String,
+        value: String,
+    },
     /// Background git status refresh completed for workspaces.
     GitStatusRefreshed {
         results: Vec<WorkspaceGitStatus>,

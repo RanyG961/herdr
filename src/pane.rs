@@ -2230,6 +2230,26 @@ fn publish_reported_cwd(
     }
 }
 
+fn publish_user_vars(
+    pane_id: PaneId,
+    user_vars: Vec<(String, String)>,
+    events: &mpsc::Sender<AppEvent>,
+) {
+    for (name, value) in user_vars {
+        if let Err(err) = events.try_send(AppEvent::TerminalUserVarSet {
+            pane_id,
+            name,
+            value,
+        }) {
+            warn!(
+                pane = pane_id.raw(),
+                err = %err,
+                "failed to send terminal user var"
+            );
+        }
+    }
+}
+
 impl PaneRuntime {
     pub fn shutdown(mut self) {
         if let Some(handle) = self.detect_handle.take() {
@@ -2611,6 +2631,7 @@ impl PaneRuntime {
                 if let Some(cwd) = result.reported_cwd.clone() {
                     publish_reported_cwd(pane_id, cwd, &reported_cwd, &read_events);
                 }
+                publish_user_vars(pane_id, result.user_vars, &read_events);
                 for content in result.clipboard_writes {
                     if let Err(err) = read_events.try_send(AppEvent::ClipboardWrite { content }) {
                         warn!(
@@ -2816,6 +2837,7 @@ impl PaneRuntime {
                 if let Some(cwd) = result.reported_cwd.clone() {
                     publish_reported_cwd(pane_id, cwd, &reported_cwd, &events);
                 }
+                publish_user_vars(pane_id, result.user_vars, &events);
                 for content in result.clipboard_writes {
                     if let Err(err) = events.try_send(AppEvent::ClipboardWrite { content }) {
                         warn!(

@@ -389,6 +389,28 @@ fn status_entry_with_icon_renders_as_a_pill() {
 }
 
 #[test]
+fn status_pill_icon_block_uses_the_projected_value_color() {
+    let config = pill_config("");
+    let palette = config.palette.clone();
+    for (bg, expected) in [("green", palette.green), ("red", palette.red)] {
+        let mut projected = four_tabs();
+        projected.tab_bar_right = vec![crate::protocol::ClientShellTabStatusSegment {
+            text: "insert".into(),
+            accent: false,
+            icon: Some("V".into()),
+            icon_bg: Some(bg.into()),
+        }];
+        let mut state = render(pill_config(""), projected, 106);
+        let buffer = tab_bar_buffer(&mut state, 106);
+        let expected_text = format!("{LEFT} V    insert {RIGHT}");
+        let width = super::render::display_width(&expected_text);
+        let status = Rect::new(106 - width, 0, width, 1);
+        assert_eq!(row_text(&buffer, status), expected_text);
+        assert_eq!(buffer[(status.x + 2, 0)].bg, expected, "{bg}");
+    }
+}
+
+#[test]
 fn pill_colors_follow_the_active_theme() {
     let number_bgs = |theme: &str| {
         let config = pill_config(&format!("[theme]\nname = \"{theme}\"\n"));

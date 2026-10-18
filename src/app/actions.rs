@@ -625,6 +625,19 @@ impl AppState {
             .map(|pane| pane.attached_terminal_id.clone())
     }
 
+    /// Latest OSC 1337 user var `name` reported by the terminal in `pane_id`.
+    pub(crate) fn pane_user_var(&self, pane_id: PaneId, name: &str) -> Option<&str> {
+        let terminal_id = self.workspaces.iter().find_map(|ws| {
+            ws.pane_state(pane_id)
+                .map(|pane| &pane.attached_terminal_id)
+        })?;
+        self.terminals
+            .get(terminal_id)?
+            .user_vars
+            .get(name)
+            .map(String::as_str)
+    }
+
     pub(crate) fn remove_unattached_terminal_ids(
         &mut self,
         terminal_ids: impl IntoIterator<Item = crate::terminal::TerminalId>,
@@ -1637,6 +1650,20 @@ impl AppState {
                 if terminal.cwd != cwd {
                     terminal.cwd = cwd;
                     self.mark_session_dirty();
+                }
+                Vec::new()
+            }
+            AppEvent::TerminalUserVarSet {
+                pane_id,
+                name,
+                value,
+            } => {
+                let terminal_id = self.workspaces.iter().find_map(|ws| {
+                    ws.pane_state(pane_id)
+                        .map(|pane| pane.attached_terminal_id.clone())
+                });
+                if let Some(terminal) = terminal_id.and_then(|id| self.terminals.get_mut(&id)) {
+                    terminal.set_user_var(name, value);
                 }
                 Vec::new()
             }
