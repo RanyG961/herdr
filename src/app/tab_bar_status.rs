@@ -88,6 +88,18 @@ impl App {
                         format,
                     });
                 }
+                TabBarRightEntryConfig::PaneVar { name, colors, .. } => {
+                    if name.trim().is_empty() {
+                        continue;
+                    }
+                    self.state.tab_bar_right.push(TabBarStatusSegment::PaneVar {
+                        name: name.clone(),
+                        colors: colors
+                            .iter()
+                            .map(|(value, color)| (value.clone(), color.as_str().to_owned()))
+                            .collect(),
+                    });
+                }
                 TabBarRightEntryConfig::Text { text, .. } => {
                     self.state
                         .tab_bar_right
@@ -254,6 +266,22 @@ fn sanitize_literal_text(value: &str) -> Option<String> {
         .filter(|character| !character.is_control())
         .collect();
     (!value.is_empty()).then_some(value)
+}
+
+impl App {
+    /// Text and value-specific icon background for a `pane_var` segment, read
+    /// from the pane with public id `pane_id`. `None` hides the segment.
+    pub(crate) fn pane_var_status(
+        &self,
+        pane_id: Option<&str>,
+        name: &str,
+        colors: &std::collections::BTreeMap<String, String>,
+    ) -> Option<(String, Option<String>)> {
+        let (_, pane_id) = self.parse_pane_id(pane_id?)?;
+        let value = self.state.pane_user_var(pane_id, name)?;
+        let text = sanitize_status_text(value)?;
+        Some((text, colors.get(value).cloned()))
+    }
 }
 
 fn sanitize_status_text(value: &str) -> Option<String> {

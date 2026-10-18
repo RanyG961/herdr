@@ -350,6 +350,14 @@ impl App {
                 None
             };
         let terminal_cwd_reported = matches!(ev, AppEvent::TerminalCwdReported { .. });
+        let user_var_changed = match &ev {
+            AppEvent::TerminalUserVarSet {
+                pane_id,
+                name,
+                value,
+            } => self.state.pane_user_var(*pane_id, name).unwrap_or_default() != value,
+            _ => false,
+        };
         let previous_toast = self.state.toast.clone();
         let mut pane_updates = self.state.handle_app_event(ev);
         if update_ready.is_some() {
@@ -375,6 +383,10 @@ impl App {
             }
         }
         self.sync_full_lifecycle_authority_detection_pauses();
+        if user_var_changed {
+            self.render_dirty.request_generic();
+            self.render_notify.notify_one();
+        }
         if terminal_cwd_reported {
             self.request_git_identity_refresh(Instant::now());
             self.render_dirty.request_generic();

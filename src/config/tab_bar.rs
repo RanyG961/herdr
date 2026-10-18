@@ -1,3 +1,5 @@
+use std::collections::BTreeMap;
+
 use serde::{Deserialize, Serialize};
 
 pub(crate) const DEFAULT_TAB_BAR_COMMAND_INTERVAL_SECONDS: u64 = 5;
@@ -49,6 +51,15 @@ pub enum TabBarRightEntryConfig {
         icon: Option<String>,
         icon_bg: Option<TabPillColor>,
     },
+    /// The focused pane's latest OSC 1337 `SetUserVar` value for `name`.
+    PaneVar {
+        name: String,
+        icon: Option<String>,
+        icon_bg: Option<TabPillColor>,
+        /// Icon backgrounds by value, overriding `icon_bg`.
+        #[serde(default)]
+        colors: BTreeMap<String, TabPillColor>,
+    },
 }
 
 impl TabBarRightEntryConfig {
@@ -58,7 +69,8 @@ impl TabBarRightEntryConfig {
         | Self::Hostname { icon, icon_bg }
         | Self::Datetime { icon, icon_bg, .. }
         | Self::Text { icon, icon_bg, .. }
-        | Self::Command { icon, icon_bg, .. }) = self;
+        | Self::Command { icon, icon_bg, .. }
+        | Self::PaneVar { icon, icon_bg, .. }) = self;
         (icon.as_deref(), icon_bg.as_ref())
     }
 }
@@ -202,6 +214,13 @@ pub(crate) fn tab_bar_right_diagnostics(entries: &[TabBarRightEntryConfig]) -> V
                     ));
                 }
             }
+            TabBarRightEntryConfig::PaneVar { name, .. } => {
+                if name.trim().is_empty() {
+                    diagnostics.push(format!(
+                        "ui.tab_bar_right[{index}] pane_var name is empty; hiding entry"
+                    ));
+                }
+            }
             TabBarRightEntryConfig::Zoom { .. }
             | TabBarRightEntryConfig::Hostname { .. }
             | TabBarRightEntryConfig::Text { .. } => {}
@@ -341,6 +360,65 @@ left_cap = ""
                 (None, None)
             ]
         );
+    }
+
+    #[test]
+    fn pane_var_entry_parses_value_colors_and_validates() {
+        let config: crate::config::Config = toml::from_str(
+            r##"
+[ui]
+tab_bar_right = [
+  { type = "pane_var", name = "vi_mode", icon = "V", icon_bg = "overlay1", colors = { insert = "green", normal = "#5cd4ff" } },
+  { type = "pane_var", name = "plain" },
+  { type = "pane_var", name = " " },
+]
+"##,
+        )
+        .expect("pane_var config");
+        let TabBarRightEntryConfig::PaneVar { name, colors, .. } = &config.ui.tab_bar_right[0]
+        else {
+            panic!("expected pane_var entry");
+        };
+        assert_eq!(name, "vi_mode");
+        assert_eq!(
+            colors
+                .iter()
+                .map(|(value, color)| (value.as_str(), color.as_str()))
+                .collect::<Vec<_>>(),
+            [("insert", "green"), ("normal", "#5cd4ff")]
+        );
+        assert_eq!(
+            config.ui.tab_bar_right[0].pill_icon(),
+            (Some("V"), Some(&TabPillColor("overlay1".into())))
+        );
+        assert!(matches!(
+            &config.ui.tab_bar_right[1],
+            TabBarRightEntryConfig::PaneVar { colors, icon: None, .. } if colors.is_empty()
+        ));
+        assert_eq!(
+            tab_bar_right_diagnostics(&config.ui.tab_bar_right),
+            ["ui.tab_bar_right[2] pane_var name is empty; hiding entry"]
+        );
+
+        for (toml, expected) in [
+            (
+                "[ui]\ntab_bar_right = [{ type = \"pane_var\" }]\n",
+                "missing field `name`",
+            ),
+            (
+                "[ui]\ntab_bar_right = [{ type = \"pane_var\", name = \"m\", colors = { insert = \"pink\" } }]\n",
+                "unknown pill color",
+            ),
+            (
+                "[ui]\ntab_bar_right = [{ type = \"pane_var\", name = \"m\", colors = [\"green\"] }]\n",
+                "invalid type",
+            ),
+        ] {
+            let err = toml::from_str::<crate::config::Config>(toml)
+                .expect_err(toml)
+                .to_string();
+            assert!(err.contains(expected), "{toml}: {err}");
+        }
     }
 
     #[test]

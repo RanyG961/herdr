@@ -490,21 +490,26 @@ const AGENT_OSC_MAX_CHARS: usize = 256;
 ///   payload (e.g. `\x1b]0;\x07`) clears the stored value.
 /// - `latest_progress` — last OSC 9 payload (the part after `9;`), stored
 ///   as-is after sanitization. E.g. `"4;3;"` or `"4;0;"`.
+///
+/// It also collects OSC 1337 `SetUserVar` assignments for pane metadata, so
+/// pane output is framed only once.
 #[derive(Debug, Default)]
 pub(super) struct AgentOscStateTracker {
     collector: OscStreamCollector,
     latest_title: Option<String>,
     terminal_title: Option<String>,
     latest_progress: Option<String>,
+    pending_user_vars: Vec<(String, String)>,
 }
 
 impl AgentOscStateTracker {
     pub(super) fn observe(&mut self, bytes: &[u8]) -> bool {
-        let (collector, latest_title, terminal_title, latest_progress) = (
+        let (collector, latest_title, terminal_title, latest_progress, pending_user_vars) = (
             &mut self.collector,
             &mut self.latest_title,
             &mut self.terminal_title,
             &mut self.latest_progress,
+            &mut self.pending_user_vars,
         );
         let mut terminal_title_changed = false;
         collector.observe(bytes, |body| {
@@ -523,10 +528,16 @@ impl AgentOscStateTracker {
                     *latest_progress =
                         Some(sanitize_agent_osc_string(payload, AGENT_OSC_MAX_CHARS));
                 }
+                b"1337" => pending_user_vars.extend(parse_user_var(payload)),
                 _ => {}
             }
         });
         terminal_title_changed
+    }
+
+    /// Takes the `SetUserVar` assignments completed since the last drain, in order.
+    pub(super) fn drain_user_vars(&mut self) -> Vec<(String, String)> {
+        std::mem::take(&mut self.pending_user_vars)
     }
 
     pub(super) fn terminal_title(&self) -> Option<&str> {
@@ -566,6 +577,27 @@ impl AgentOscStateTracker {
 fn parse_agent_osc_body(body: &[u8]) -> Option<(&[u8], &[u8])> {
     let sep = body.iter().position(|&b| b == b';')?;
     Some((&body[..sep], &body[sep + 1..]))
+}
+
+/// Parses iTerm2's `SetUserVar=<name>=<base64 value>` OSC 1337 payload. Other
+/// OSC 1337 payloads, empty names, and invalid base64 or UTF-8 are ignored.
+fn parse_user_var(payload: &[u8]) -> Option<(String, String)> {
+    use base64::Engine;
+
+    let assignment = payload.strip_prefix(b"SetUserVar=")?;
+    let separator = assignment.iter().position(|&byte| byte == b'=')?;
+    let name = sanitize_agent_osc_string(&assignment[..separator], AGENT_OSC_MAX_CHARS);
+    if name.is_empty() || name.len() != separator {
+        return None;
+    }
+    let value = base64::engine::general_purpose::STANDARD
+        .decode(&assignment[separator + 1..])
+        .ok()?;
+    let value = std::str::from_utf8(&value).ok()?;
+    Some((
+        name,
+        sanitize_agent_osc_string(value.as_bytes(), AGENT_OSC_MAX_CHARS),
+    ))
 }
 
 fn sanitize_agent_osc_string(payload: &[u8], max_chars: usize) -> String {
@@ -1150,6 +1182,51 @@ mod tests {
         t.observe(b"\x1b]0;first\x07\x1b]9;4;3;\x07\x1b]2;second\x07");
         assert_eq!(t.latest_title(), "second");
         assert_eq!(t.latest_progress(), "4;3;");
+    }
+
+    #[test]
+    fn user_vars_parse_set_user_var_and_ignore_other_payloads() {
+        let mut t = AgentOscStateTracker::default();
+        // "insert" and "visual_line" in base64, BEL and ST terminated.
+        t.observe(b"\x1b]1337;SetUserVar=vi_mode=aW5zZXJ0\x07");
+        t.observe(b"\x1b]1337;SetUserVar=vi_mode=dmlzdWFsX2xpbmU=\x1b\\");
+        assert_eq!(
+            t.drain_user_vars(),
+            [
+                ("vi_mode".to_owned(), "insert".to_owned()),
+                ("vi_mode".to_owned(), "visual_line".to_owned())
+            ]
+        );
+        assert!(t.drain_user_vars().is_empty());
+
+        for ignored in [
+            b"\x1b]1337;CurrentDir=/tmp\x07".as_slice(),
+            b"\x1b]1337;SetUserVar=vi_mode=not base64!\x07",
+            b"\x1b]1337;SetUserVar=vi_mode\x07",
+            b"\x1b]1337;SetUserVar==aW5zZXJ0\x07",
+            b"\x1b]1337;SetUserVar=vi\x01mode=aW5zZXJ0\x07",
+            b"\x1b]1337;SetUserVar=vi_mode=/w==\x07",
+            b"\x1b]21337;SetUserVar=vi_mode=aW5zZXJ0\x07",
+        ] {
+            t.observe(ignored);
+            assert!(t.drain_user_vars().is_empty(), "{ignored:?}");
+        }
+        assert_eq!(t.latest_title(), "");
+    }
+
+    #[test]
+    fn user_vars_survive_split_reads_and_empty_values() {
+        let mut t = AgentOscStateTracker::default();
+        t.observe(b"\x1b]1337;SetUserVar=vi_mo");
+        assert!(t.drain_user_vars().is_empty());
+        t.observe(b"de=bm9ybWFs\x07\x1b]1337;SetUserVar=vi_mode=\x07");
+        assert_eq!(
+            t.drain_user_vars(),
+            [
+                ("vi_mode".to_owned(), "normal".to_owned()),
+                ("vi_mode".to_owned(), String::new())
+            ]
+        );
     }
 
     #[test]

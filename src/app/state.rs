@@ -784,6 +784,11 @@ pub(crate) struct PaneFocusTarget {
 pub enum TabBarStatusSegment {
     Zoom,
     Text(Option<String>),
+    /// Focused pane's user var `name`; `colors` maps values to icon backgrounds.
+    PaneVar {
+        name: String,
+        colors: std::collections::BTreeMap<String, String>,
+    },
 }
 
 /// Optional pill icon for one `tab_bar_right` segment.

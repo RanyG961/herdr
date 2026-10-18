@@ -140,6 +140,8 @@ pub struct TerminalState {
     reported_resume: Option<crate::agent_resume::ReportedAgentResume>,
     reported_resume_revision: u64,
     pub terminal_title: Option<String>,
+    /// Latest OSC 1337 `SetUserVar` values by name. Live only, not persisted.
+    pub user_vars: HashMap<String, String>,
     pub manual_label: Option<String>,
     pub agent_name: Option<String>,
     agent_name_owner: Option<AgentNameOwner>,
@@ -180,6 +182,7 @@ impl TerminalState {
             reported_resume: None,
             reported_resume_revision: 0,
             terminal_title: None,
+            user_vars: HashMap::new(),
             manual_label: None,
             agent_name: None,
             agent_name_owner: None,
@@ -283,6 +286,23 @@ impl TerminalState {
             raw_changed: true,
             stripped_changed,
         }
+    }
+
+    /// Sets or, for an empty value, clears a user var. Returns whether it changed.
+    pub(crate) fn set_user_var(&mut self, name: String, value: String) -> bool {
+        // ponytail: fixed name cap bounds memory against a chatty child; raise if users hit it.
+        const MAX_USER_VARS: usize = 64;
+        if value.is_empty() {
+            return self.user_vars.remove(&name).is_some();
+        }
+        if self.user_vars.get(&name) == Some(&value) {
+            return false;
+        }
+        if !self.user_vars.contains_key(&name) && self.user_vars.len() >= MAX_USER_VARS {
+            return false;
+        }
+        self.user_vars.insert(name, value);
+        true
     }
 
     pub fn with_launch_argv(mut self, argv: Vec<String>) -> Self {
@@ -2456,6 +2476,24 @@ mod tests {
 
     fn test_terminal() -> TerminalState {
         TerminalState::new(TerminalId::alloc(), "/tmp".into())
+    }
+
+    #[test]
+    fn user_vars_set_clear_and_cap_new_names() {
+        let mut terminal = test_terminal();
+        assert!(terminal.set_user_var("vi_mode".into(), "insert".into()));
+        assert!(!terminal.set_user_var("vi_mode".into(), "insert".into()));
+        assert!(terminal.set_user_var("vi_mode".into(), "normal".into()));
+        assert!(terminal.set_user_var("vi_mode".into(), String::new()));
+        assert!(!terminal.set_user_var("vi_mode".into(), String::new()));
+        assert!(terminal.user_vars.is_empty());
+
+        for index in 0..64 {
+            assert!(terminal.set_user_var(format!("var{index}"), "x".into()));
+        }
+        assert!(!terminal.set_user_var("one_more".into(), "x".into()));
+        assert!(terminal.set_user_var("var0".into(), "y".into()));
+        assert_eq!(terminal.user_vars.len(), 64);
     }
 
     fn test_session_path(name: &str) -> String {
