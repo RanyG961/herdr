@@ -324,6 +324,9 @@ const DEFAULT_CONFIG: &str = r##"# herdr configuration
 # tab_bar_right = []
 # tab_bar_right_separator = " "
 
+# Desktop tab drawing: "block" or "pill" (rounded number + name pills).
+# tab_style = "block"
+
 # Title Herdr writes to the terminal it runs in, which is what window managers
 # show in title, tab, and group bars. Tokens are {hostname}, {workspace}, {tab},
 # {pane}, and {terminal_title}; {{ and }} are literal braces.

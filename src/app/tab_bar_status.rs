@@ -9,7 +9,10 @@ use std::{
 
 use tokio::io::AsyncReadExt;
 
-use super::{state::TabBarStatusSegment, App};
+use super::{
+    state::{TabBarStatusIcon, TabBarStatusSegment},
+    App,
+};
 use crate::config::TabBarRightEntryConfig;
 
 const DATETIME_REFRESH_INTERVAL: Duration = Duration::from_secs(1);
@@ -51,6 +54,7 @@ impl App {
         self.tab_bar_datetimes.clear();
         self.tab_bar_commands.clear();
         self.state.tab_bar_right.clear();
+        self.state.tab_bar_right_icons.clear();
         self.state.tab_bar_right_separator = sanitize_separator(separator);
 
         let now = std::time::Instant::now();
@@ -58,18 +62,19 @@ impl App {
             .iter()
             .take(crate::config::MAX_TAB_BAR_RIGHT_ENTRIES)
         {
+            let segments_before = self.state.tab_bar_right.len();
             match entry {
-                TabBarRightEntryConfig::Zoom => {
+                TabBarRightEntryConfig::Zoom { .. } => {
                     self.state.tab_bar_right.push(TabBarStatusSegment::Zoom);
                 }
-                TabBarRightEntryConfig::Hostname => {
+                TabBarRightEntryConfig::Hostname { .. } => {
                     self.state
                         .tab_bar_right
                         .push(TabBarStatusSegment::Text(sanitize_status_text(
                             crate::platform::hostname().as_deref().unwrap_or_default(),
                         )));
                 }
-                TabBarRightEntryConfig::Datetime { format } => {
+                TabBarRightEntryConfig::Datetime { format, .. } => {
                     let Ok(format) = crate::config::parse_tab_bar_datetime_format(format) else {
                         continue;
                     };
@@ -83,7 +88,7 @@ impl App {
                         format,
                     });
                 }
-                TabBarRightEntryConfig::Text { text } => {
+                TabBarRightEntryConfig::Text { text, .. } => {
                     self.state
                         .tab_bar_right
                         .push(TabBarStatusSegment::Text(sanitize_literal_text(text)));
@@ -92,6 +97,7 @@ impl App {
                     command,
                     interval_seconds,
                     timeout_seconds,
+                    ..
                 } => {
                     if !crate::platform::status_commands_supported()
                         || command.trim().is_empty()
@@ -115,6 +121,18 @@ impl App {
                         task: None,
                     });
                 }
+            }
+            if self.state.tab_bar_right.len() > segments_before {
+                let (icon, bg) = entry.pill_icon();
+                self.state
+                    .tab_bar_right_icons
+                    .push(
+                        icon.and_then(sanitize_status_text)
+                            .map(|icon| TabBarStatusIcon {
+                                icon,
+                                bg: bg.map(|bg| bg.as_str().to_owned()),
+                            }),
+                    );
             }
         }
 
@@ -646,6 +664,8 @@ mod tests {
                 command: MULTILINE_COMMAND.into(),
                 interval_seconds: 5,
                 timeout_seconds: 2,
+                icon: None,
+                icon_bg: None,
             }],
             " ",
         );
@@ -653,6 +673,8 @@ mod tests {
         app.configure_tab_bar_status(
             &[TabBarRightEntryConfig::Text {
                 text: "fresh".into(),
+                icon: None,
+                icon_bg: None,
             }],
             " ",
         );
@@ -681,6 +703,8 @@ mod tests {
                 command,
                 interval_seconds: 5,
                 timeout_seconds: 20,
+                icon: None,
+                icon_bg: None,
             }],
             " ",
         );
@@ -699,6 +723,8 @@ mod tests {
         app.configure_tab_bar_status(
             &[TabBarRightEntryConfig::Text {
                 text: "reloaded".into(),
+                icon: None,
+                icon_bg: None,
             }],
             " ",
         );
@@ -727,6 +753,8 @@ mod tests {
                 command: MULTILINE_COMMAND.into(),
                 interval_seconds: 5,
                 timeout_seconds: 2,
+                icon: None,
+                icon_bg: None,
             }],
             " ",
         );
@@ -745,6 +773,8 @@ mod tests {
         app.configure_tab_bar_status(
             &[TabBarRightEntryConfig::Datetime {
                 format: "%Y-%m-%d %H:%M:%S".into(),
+                icon: None,
+                icon_bg: None,
             }],
             " ",
         );

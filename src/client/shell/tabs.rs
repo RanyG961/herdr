@@ -1,4 +1,6 @@
 use super::*;
+use crate::config::{TabPillConfig, TabStyleConfig};
+use crate::protocol::ClientShellTabStatusSegment;
 
 const TAB_SCROLL_BUTTON_WIDTH: u16 = 3;
 const MIN_TAB_STRIP_WIDTH: u16 =
@@ -21,14 +23,19 @@ pub(crate) fn render_tab_bar(
         .iter()
         .filter(|tab| Some(tab.workspace_id.as_str()) == snapshot.focused_workspace_id.as_deref())
         .collect::<Vec<_>>();
+    let pill = config.tab_style == TabStyleConfig::Pill;
     let desired_widths = tabs
         .iter()
         .map(|tab| {
             let label = tab_label(tab);
-            display_width(&label).saturating_add(4).max(MIN_TAB_WIDTH)
+            if pill {
+                pill_tab_width(&label, tab.number, &config.tab_pill).max(MIN_TAB_WIDTH)
+            } else {
+                display_width(&label).saturating_add(4).max(MIN_TAB_WIDTH)
+            }
         })
         .collect::<Vec<_>>();
-    let content = tab_bar_content_area(snapshot, area);
+    let content = tab_bar_content_area(snapshot, config, area);
     let mouse_chrome = config.mouse_capture;
     let new_tab_width = if mouse_chrome { NEW_TAB_WIDTH } else { 0 };
     let desired_total = desired_widths
@@ -100,29 +107,33 @@ pub(crate) fn render_tab_bar(
             break;
         }
         let rect = Rect::new(x, area.y, width, 1);
-        let style = if tab.focused {
-            let base = Style::default()
-                .fg(panel_contrast_fg(palette))
-                .bg(palette.accent);
-            if tab.custom_label {
-                base.add_modifier(Modifier::BOLD)
-            } else {
-                base
-            }
-        } else if tab.custom_label {
-            Style::default().fg(palette.overlay1).bg(palette.surface0)
+        if pill {
+            render_pill_tab(buffer, rect, tab, &name, index, config);
         } else {
-            Style::default().fg(palette.overlay0).bg(palette.surface0)
-        };
-        let padding = width.saturating_sub(display_width(&name));
-        let left = padding / 2;
-        let text = format!(
-            "{empty:left$}{name}{empty:right_padding$}",
-            empty = "",
-            left = left as usize,
-            right_padding = padding.saturating_sub(left) as usize,
-        );
-        put_text(buffer, rect.x, rect.y, rect.width, &text, style);
+            let style = if tab.focused {
+                let base = Style::default()
+                    .fg(panel_contrast_fg(palette))
+                    .bg(palette.accent);
+                if tab.custom_label {
+                    base.add_modifier(Modifier::BOLD)
+                } else {
+                    base
+                }
+            } else if tab.custom_label {
+                Style::default().fg(palette.overlay1).bg(palette.surface0)
+            } else {
+                Style::default().fg(palette.overlay0).bg(palette.surface0)
+            };
+            let padding = width.saturating_sub(display_width(&name));
+            let left = padding / 2;
+            let text = format!(
+                "{empty:left$}{name}{empty:right_padding$}",
+                empty = "",
+                left = left as usize,
+                right_padding = padding.saturating_sub(left) as usize,
+            );
+            put_text(buffer, rect.x, rect.y, rect.width, &text, style);
+        }
         hits.tabs.push((rect, tab.tab_id.clone()));
         first_visible.get_or_insert(index);
         last_visible = Some(index);
@@ -220,12 +231,15 @@ pub(crate) fn render_tab_bar(
             );
         }
     }
-    render_tab_bar_status(buffer, area, snapshot, palette);
+    render_tab_bar_status(buffer, area, snapshot, config);
 }
 
-pub(crate) fn tab_bar_status_width(snapshot: &ClientShellSnapshot) -> u16 {
+pub(crate) fn tab_bar_status_width(
+    snapshot: &ClientShellSnapshot,
+    config: &ClientShellConfig,
+) -> u16 {
     let content = snapshot.tab_bar_right.iter().fold(0u16, |width, segment| {
-        width.saturating_add(display_width(&segment.text))
+        width.saturating_add(status_segment_width(segment, &config.tab_pill))
     });
     let separators = snapshot.tab_bar_right.len().saturating_sub(1);
     content.saturating_add(
@@ -234,8 +248,12 @@ pub(crate) fn tab_bar_status_width(snapshot: &ClientShellSnapshot) -> u16 {
     )
 }
 
-fn tab_bar_status_area(snapshot: &ClientShellSnapshot, area: Rect) -> Option<Rect> {
-    let width = tab_bar_status_width(snapshot);
+fn tab_bar_status_area(
+    snapshot: &ClientShellSnapshot,
+    config: &ClientShellConfig,
+    area: Rect,
+) -> Option<Rect> {
+    let width = tab_bar_status_width(snapshot, config);
     if width == 0 {
         return None;
     }
@@ -244,8 +262,12 @@ fn tab_bar_status_area(snapshot: &ClientShellSnapshot, area: Rect) -> Option<Rec
         .then(|| Rect::new(area.right().saturating_sub(width), area.y, width, 1))
 }
 
-fn tab_bar_content_area(snapshot: &ClientShellSnapshot, area: Rect) -> Rect {
-    let reserved = tab_bar_status_area(snapshot, area)
+fn tab_bar_content_area(
+    snapshot: &ClientShellSnapshot,
+    config: &ClientShellConfig,
+    area: Rect,
+) -> Rect {
+    let reserved = tab_bar_status_area(snapshot, config, area)
         .map(|status| status.width.saturating_add(1))
         .unwrap_or(0);
     Rect {
@@ -258,9 +280,10 @@ fn render_tab_bar_status(
     buffer: &mut Buffer,
     area: Rect,
     snapshot: &ClientShellSnapshot,
-    palette: &Palette,
+    config: &ClientShellConfig,
 ) {
-    let Some(status) = tab_bar_status_area(snapshot, area) else {
+    let palette = &config.palette;
+    let Some(status) = tab_bar_status_area(snapshot, config, area) else {
         return;
     };
     let separator_width = display_width(&snapshot.tab_bar_right_separator);
@@ -276,6 +299,10 @@ fn render_tab_bar_status(
                 Style::default().fg(palette.overlay0).bg(palette.panel_bg),
             );
             x = x.saturating_add(separator_width);
+        }
+        if let Some(icon) = segment.icon.as_deref() {
+            x = render_pill_status_segment(buffer, x, area.y, segment, icon, config);
+            continue;
         }
         let width = display_width(&segment.text);
         let style = if segment.accent {
@@ -371,6 +398,191 @@ fn max_tab_scroll(widths: &[u16], available: u16) -> usize {
     start
 }
 
+fn pill_caps_width(pill: &TabPillConfig) -> u16 {
+    display_width(&pill.left_cap).saturating_add(display_width(&pill.right_cap))
+}
+
+/// Drawn width of a pill tab: caps, padded number block, and padded label block.
+/// The label gets one extra pad column so it reads centered against the right cap.
+fn pill_tab_width(label: &str, number: usize, pill: &TabPillConfig) -> u16 {
+    pill_caps_width(pill)
+        .saturating_add(display_width(label))
+        .saturating_add(number.checked_ilog10().unwrap_or(0) as u16 + 1)
+        .saturating_add(5)
+}
+
+fn status_segment_width(segment: &ClientShellTabStatusSegment, pill: &TabPillConfig) -> u16 {
+    match segment.icon.as_deref() {
+        Some(icon) => pill_caps_width(pill)
+            .saturating_add(display_width(icon))
+            .saturating_add(display_width(&segment.text))
+            .saturating_add(6),
+        None => display_width(&segment.text),
+    }
+}
+
+/// Resolve a pill color: a theme token name or `#RGB`/`#RRGGBB`.
+fn tab_pill_color(palette: &Palette, value: &str) -> Option<ratatui::style::Color> {
+    Some(match value {
+        "accent" => palette.accent,
+        "text" => palette.text,
+        "subtext0" => palette.subtext0,
+        "overlay0" => palette.overlay0,
+        "overlay1" => palette.overlay1,
+        "surface0" => palette.surface0,
+        "surface1" => palette.surface1,
+        "mauve" => palette.mauve,
+        "green" => palette.green,
+        "yellow" => palette.yellow,
+        "red" => palette.red,
+        "blue" => palette.blue,
+        "teal" => palette.teal,
+        "peach" => palette.peach,
+        _ => return crate::config::SidebarTokenColor::parse(value).map(|color| color.ratatui()),
+    })
+}
+
+/// Draw `(n label)` filling exactly `rect`. When `rect` is narrower than the pill,
+/// the label is truncated, then dropped, and the caps go last.
+fn render_pill_tab(
+    buffer: &mut Buffer,
+    rect: Rect,
+    tab: &ClientShellTab,
+    label: &str,
+    position: usize,
+    config: &ClientShellConfig,
+) {
+    let palette = &config.palette;
+    let pill = &config.tab_pill;
+    let mut label_style = if tab.focused {
+        Style::default().fg(palette.accent).bg(palette.surface1)
+    } else if tab.custom_label {
+        Style::default().fg(palette.overlay1).bg(palette.surface0)
+    } else {
+        Style::default().fg(palette.overlay0).bg(palette.surface0)
+    };
+    if tab.custom_label {
+        label_style = label_style.add_modifier(Modifier::BOLD);
+    }
+    let number_bg = match pill.index_colors.len() {
+        0 => palette.accent,
+        len => tab_pill_color(palette, pill.index_colors[position % len].as_str())
+            .unwrap_or(palette.accent),
+    };
+    let mut number_style = Style::default()
+        .fg(panel_contrast_fg(palette))
+        .bg(number_bg);
+    if tab.focused {
+        number_style = number_style.add_modifier(Modifier::BOLD);
+    }
+    let number = format!(" {} ", tab.number);
+
+    let (mut left_cap, mut right_cap) = (pill.left_cap.as_str(), pill.right_cap.as_str());
+    if rect.width <= pill_caps_width(pill) {
+        (left_cap, right_cap) = ("", "");
+    }
+    let inner = rect
+        .width
+        .saturating_sub(display_width(left_cap) + display_width(right_cap));
+    let number_width = display_width(&number).min(inner);
+    let label_width = inner - number_width;
+    let label = if display_width(label) + 2 <= label_width {
+        let padding = label_width - display_width(label);
+        // The right cap visually extends the block, so odd spare space goes left.
+        let left = padding - padding / 2;
+        format!(
+            "{empty:left$}{label}{empty:right$}",
+            empty = "",
+            left = left as usize,
+            right = (padding - left) as usize,
+        )
+    } else if label_width >= 3 {
+        format!(
+            " {} ",
+            crate::ui::truncate_end(label, usize::from(label_width - 2))
+        )
+    } else {
+        crate::ui::truncate_end(label, usize::from(label_width))
+    };
+
+    let cap_style = |block: Style| {
+        Style::default()
+            .fg(block.bg.unwrap_or(palette.panel_bg))
+            .bg(palette.panel_bg)
+    };
+    let mut x = put_segment(
+        buffer,
+        rect.x,
+        rect.y,
+        rect.right(),
+        left_cap,
+        cap_style(number_style),
+    );
+    put_text(buffer, x, rect.y, number_width, &number, number_style);
+    x = x.saturating_add(number_width);
+    let last_block = if label_width > 0 {
+        buffer.set_style(Rect::new(x, rect.y, label_width, 1), label_style);
+        put_text(buffer, x, rect.y, label_width, &label, label_style);
+        x = x.saturating_add(label_width);
+        label_style
+    } else {
+        number_style
+    };
+    put_segment(
+        buffer,
+        x,
+        rect.y,
+        rect.right(),
+        right_cap,
+        cap_style(last_block),
+    );
+}
+
+/// Draw a right-side entry as `(icon text)` and return the next column. Each block
+/// gets an extra pad column on the side away from its cap so it reads centered.
+fn render_pill_status_segment(
+    buffer: &mut Buffer,
+    x: u16,
+    y: u16,
+    segment: &ClientShellTabStatusSegment,
+    icon: &str,
+    config: &ClientShellConfig,
+) -> u16 {
+    let palette = &config.palette;
+    let pill = &config.tab_pill;
+    let icon_bg = segment
+        .icon_bg
+        .as_deref()
+        .and_then(|value| tab_pill_color(palette, value))
+        .unwrap_or(palette.accent);
+    let icon_style = Style::default().fg(panel_contrast_fg(palette)).bg(icon_bg);
+    let text_style = if segment.accent {
+        Style::default()
+            .fg(panel_contrast_fg(palette))
+            .bg(palette.accent)
+            .add_modifier(Modifier::BOLD)
+    } else {
+        Style::default().fg(palette.overlay1).bg(palette.surface0)
+    };
+    let cap_style = |block: Style| {
+        Style::default()
+            .fg(block.bg.unwrap_or(palette.panel_bg))
+            .bg(palette.panel_bg)
+    };
+    let right = buffer.area.right();
+    let x = put_segment(buffer, x, y, right, &pill.left_cap, cap_style(icon_style));
+    let x = put_segment(buffer, x, y, right, &format!(" {icon}  "), icon_style);
+    let x = put_segment(
+        buffer,
+        x,
+        y,
+        right,
+        &format!("  {} ", segment.text),
+        text_style,
+    );
+    put_segment(buffer, x, y, right, &pill.right_cap, cap_style(text_style))
+}
+
 fn tab_label(tab: &ClientShellTab) -> String {
     if tab.zoomed {
         format!("{} Z", tab.label)
@@ -381,7 +593,21 @@ fn tab_label(tab: &ClientShellTab) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::max_tab_scroll;
+    use super::{max_tab_scroll, tab_pill_color};
+
+    #[test]
+    fn every_accepted_pill_token_resolves_against_the_palette() {
+        let palette = crate::app::state::Palette::catppuccin();
+        for token in crate::config::TAB_PILL_PALETTE_TOKENS {
+            assert!(tab_pill_color(&palette, token).is_some(), "{token}");
+        }
+        assert_eq!(tab_pill_color(&palette, "mauve"), Some(palette.mauve));
+        assert_eq!(
+            tab_pill_color(&palette, "#f0a"),
+            Some(ratatui::style::Color::Rgb(0xff, 0x00, 0xaa))
+        );
+        assert_eq!(tab_pill_color(&palette, "pink"), None);
+    }
 
     #[test]
     fn trailing_scroll_limit_accounts_for_full_widths_and_separators() {

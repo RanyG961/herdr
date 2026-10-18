@@ -202,21 +202,23 @@ pub(super) fn snapshot_with_completions(
         .state
         .tab_bar_right
         .iter()
-        .filter_map(|segment| match segment {
-            crate::app::state::TabBarStatusSegment::Zoom if zoomed => {
-                Some(protocol::ClientShellTabStatusSegment {
-                    text: "ZOOM".to_owned(),
-                    accent: true,
-                })
-            }
-            crate::app::state::TabBarStatusSegment::Text(Some(text)) if !text.is_empty() => {
-                Some(protocol::ClientShellTabStatusSegment {
-                    text: text.clone(),
-                    accent: false,
-                })
-            }
-            crate::app::state::TabBarStatusSegment::Zoom
-            | crate::app::state::TabBarStatusSegment::Text(_) => None,
+        .enumerate()
+        .filter_map(|(index, segment)| {
+            let (text, accent) = match segment {
+                crate::app::state::TabBarStatusSegment::Zoom if zoomed => ("ZOOM".to_owned(), true),
+                crate::app::state::TabBarStatusSegment::Text(Some(text)) if !text.is_empty() => {
+                    (text.clone(), false)
+                }
+                crate::app::state::TabBarStatusSegment::Zoom
+                | crate::app::state::TabBarStatusSegment::Text(_) => return None,
+            };
+            let icon = app.state.tab_bar_right_icons.get(index).cloned().flatten();
+            Some(protocol::ClientShellTabStatusSegment {
+                text,
+                accent,
+                icon_bg: icon.as_ref().and_then(|icon| icon.bg.clone()),
+                icon: icon.map(|icon| icon.icon),
+            })
         })
         .collect();
 
@@ -750,6 +752,51 @@ mod tests {
                 notes.preview
             )),
             Some(("0.8.3", "### Changed\n- Client shell", true))
+        );
+    }
+
+    #[test]
+    fn snapshot_keeps_status_icons_aligned_with_visible_segments() {
+        let config: crate::config::Config = toml::from_str(
+            r#"
+[ui]
+tab_bar_right = [
+  { type = "datetime", format = "%Q", icon = "D" },
+  { type = "zoom", icon = "Z" },
+  { type = "text", text = "plain" },
+  { type = "text", text = "repo", icon = "\u001b[31m\uf07b", icon_bg = "mauve" },
+]
+"#,
+        )
+        .expect("status config");
+        let (_api_tx, api_rx) = tokio::sync::mpsc::unbounded_channel();
+        let app = crate::app::App::new(
+            &config,
+            crate::app::AppPolicy::TEST,
+            None,
+            api_rx,
+            crate::api::EventHub::default(),
+        );
+
+        let snapshot = snapshot(&app, "boot", 1, None, None);
+
+        let segments = snapshot
+            .tab_bar_right
+            .iter()
+            .map(|segment| {
+                (
+                    segment.text.as_str(),
+                    segment.icon.as_deref(),
+                    segment.icon_bg.as_deref(),
+                )
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(
+            segments,
+            [
+                ("plain", None, None),
+                ("repo", Some("[31m\u{f07b}"), Some("mauve"))
+            ]
         );
     }
 

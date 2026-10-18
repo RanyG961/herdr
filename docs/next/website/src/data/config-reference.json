@@ -1019,7 +1019,7 @@
           "key": "ui.tab_bar_right",
           "type": "array",
           "default": "[]",
-          "description": "Configure ordered right-aligned tab bar entries. Supported types are zoom, hostname, datetime, text, and command.",
+          "description": "Configure ordered right-aligned tab bar entries. Supported types are zoom, hostname, datetime, text, and command. Any entry accepts an optional icon and icon_bg to render as a pill.",
           "values": [
             "zoom",
             "hostname",
@@ -1033,6 +1033,34 @@
           "type": "string",
           "default": "\" \"",
           "description": "Text inserted between visible right-aligned tab bar entries."
+        },
+        {
+          "key": "ui.tab_style",
+          "type": "enum",
+          "default": "\"block\"",
+          "description": "Draw desktop tabs as flat blocks or as rounded pills with a colored number block.",
+          "values": [
+            "block",
+            "pill"
+          ]
+        },
+        {
+          "key": "ui.tab_pill.index_colors",
+          "type": "array",
+          "default": "[\"green\", \"blue\", \"peach\", \"mauve\"]",
+          "description": "Pill number block colors, cycled by tab position. Each value is a theme token such as accent, green, blue, peach, or mauve (following the active theme), or #RGB/#RRGGBB."
+        },
+        {
+          "key": "ui.tab_pill.left_cap",
+          "type": "string",
+          "default": "\"\\ue0b6\"",
+          "description": "Glyph drawn at the left end of each pill. Empty draws square ends."
+        },
+        {
+          "key": "ui.tab_pill.right_cap",
+          "type": "string",
+          "default": "\"\\ue0b4\"",
+          "description": "Glyph drawn at the right end of each pill. Empty draws square ends."
         },
         {
           "key": "ui.window_title",
