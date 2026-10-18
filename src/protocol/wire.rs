@@ -1015,6 +1015,12 @@ pub struct ClientShellCommand {
 pub struct ClientShellTabStatusSegment {
     pub text: String,
     pub accent: bool,
+    /// Optional pill icon. Servers without pill support omit it.
+    #[serde(default)]
+    pub icon: Option<String>,
+    /// Theme token or hex color behind `icon`.
+    #[serde(default)]
+    pub icon_bg: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -2813,6 +2819,8 @@ mod tests {
             tab_bar_right: vec![ClientShellTabStatusSegment {
                 text: "host".into(),
                 accent: false,
+                icon: None,
+                icon_bg: None,
             }],
             tab_bar_right_separator: " · ".into(),
             agent_view_label: None,

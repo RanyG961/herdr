@@ -270,6 +270,8 @@ fn pane_split_drag_uses_projected_handle_and_stable_tab_path() {
         .push(crate::protocol::ClientShellTabStatusSegment {
             text: "updated".into(),
             accent: false,
+            icon: None,
+            icon_bg: None,
         });
     let mut replacement_surface = surface();
     replacement_surface.projection_revision = 2;

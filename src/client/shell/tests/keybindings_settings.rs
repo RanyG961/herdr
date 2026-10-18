@@ -246,10 +246,14 @@ fn tab_bar_renders_endpoint_status_ellipses_and_clamps_to_useful_scroll() {
         crate::protocol::ClientShellTabStatusSegment {
             text: "ZOOM".into(),
             accent: true,
+            icon: None,
+            icon_bg: None,
         },
         crate::protocol::ClientShellTabStatusSegment {
             text: "host".into(),
             accent: false,
+            icon: None,
+            icon_bg: None,
         },
     ];
     projected.tab_bar_right_separator = " · ".into();

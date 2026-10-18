@@ -541,6 +541,7 @@ impl App {
             pane_gaps: config.ui.pane_gaps,
             show_agent_labels_on_pane_borders: config.ui.show_agent_labels_on_pane_borders,
             tab_bar_right: Vec::new(),
+            tab_bar_right_icons: Vec::new(),
             tab_bar_right_separator: String::new(),
             reveal_hidden_cursor_for_cjk_ime: config.experimental.reveal_hidden_cursor_for_cjk_ime,
             cjk_ime_agent_filter_configured: !config.experimental.cjk_ime_agents.is_empty(),
@@ -1142,6 +1143,8 @@ mod tests {
                 command: "status".into(),
                 interval_seconds: 5,
                 timeout_seconds: 2,
+                icon: None,
+                icon_bg: None,
             }],
             " ",
         );

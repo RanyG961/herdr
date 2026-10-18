@@ -50,6 +50,32 @@ impl SidebarTokenColor {
     pub(crate) fn ratatui(self) -> ratatui::style::Color {
         ratatui::style::Color::Rgb(self.r, self.g, self.b)
     }
+
+    /// Parse `#RGB` or `#RRGGBB`.
+    pub(crate) fn parse(value: &str) -> Option<Self> {
+        let hex = value.strip_prefix('#').filter(|hex| {
+            hex.is_ascii()
+                && matches!(hex.len(), 3 | 6)
+                && hex.bytes().all(|byte| byte.is_ascii_hexdigit())
+        })?;
+        let (r, g, b) = if hex.len() == 3 {
+            let mut digits = hex
+                .bytes()
+                .map(|byte| char::from(byte).to_digit(16).expect("validated hex digit") as u8 * 17);
+            (
+                digits.next().expect("three hex digits"),
+                digits.next().expect("three hex digits"),
+                digits.next().expect("three hex digits"),
+            )
+        } else {
+            (
+                u8::from_str_radix(&hex[0..2], 16).expect("validated hex digits"),
+                u8::from_str_radix(&hex[2..4], 16).expect("validated hex digits"),
+                u8::from_str_radix(&hex[4..6], 16).expect("validated hex digits"),
+            )
+        };
+        Some(Self { r, g, b })
+    }
 }
 
 impl Serialize for SidebarTokenColor {
@@ -67,33 +93,8 @@ impl<'de> Deserialize<'de> for SidebarTokenColor {
         D: serde::Deserializer<'de>,
     {
         let value = String::deserialize(deserializer)?;
-        let hex = value.strip_prefix('#').filter(|hex| {
-            hex.is_ascii()
-                && matches!(hex.len(), 3 | 6)
-                && hex.bytes().all(|byte| byte.is_ascii_hexdigit())
-        });
-        let Some(hex) = hex else {
-            return Err(serde::de::Error::custom(
-                "sidebar token fg must be #RGB or #RRGGBB",
-            ));
-        };
-        let (r, g, b) = if hex.len() == 3 {
-            let mut digits = hex
-                .bytes()
-                .map(|byte| char::from(byte).to_digit(16).expect("validated hex digit") as u8 * 17);
-            (
-                digits.next().expect("three hex digits"),
-                digits.next().expect("three hex digits"),
-                digits.next().expect("three hex digits"),
-            )
-        } else {
-            (
-                u8::from_str_radix(&hex[0..2], 16).expect("validated hex digits"),
-                u8::from_str_radix(&hex[2..4], 16).expect("validated hex digits"),
-                u8::from_str_radix(&hex[4..6], 16).expect("validated hex digits"),
-            )
-        };
-        Ok(Self { r, g, b })
+        Self::parse(&value)
+            .ok_or_else(|| serde::de::Error::custom("sidebar token fg must be #RGB or #RRGGBB"))
     }
 }
 

@@ -21,14 +21,24 @@ fn default_command_timeout_seconds() -> u64 {
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
 pub enum TabBarRightEntryConfig {
-    Zoom,
-    Hostname,
+    Zoom {
+        icon: Option<String>,
+        icon_bg: Option<TabPillColor>,
+    },
+    Hostname {
+        icon: Option<String>,
+        icon_bg: Option<TabPillColor>,
+    },
     Datetime {
         #[serde(default = "default_datetime_format")]
         format: String,
+        icon: Option<String>,
+        icon_bg: Option<TabPillColor>,
     },
     Text {
         text: String,
+        icon: Option<String>,
+        icon_bg: Option<TabPillColor>,
     },
     Command {
         command: String,
@@ -36,7 +46,95 @@ pub enum TabBarRightEntryConfig {
         interval_seconds: u64,
         #[serde(default = "default_command_timeout_seconds")]
         timeout_seconds: u64,
+        icon: Option<String>,
+        icon_bg: Option<TabPillColor>,
     },
+}
+
+impl TabBarRightEntryConfig {
+    /// Optional icon and icon background that render the entry as a pill.
+    pub(crate) fn pill_icon(&self) -> (Option<&str>, Option<&TabPillColor>) {
+        let (Self::Zoom { icon, icon_bg }
+        | Self::Hostname { icon, icon_bg }
+        | Self::Datetime { icon, icon_bg, .. }
+        | Self::Text { icon, icon_bg, .. }
+        | Self::Command { icon, icon_bg, .. }) = self;
+        (icon.as_deref(), icon_bg.as_ref())
+    }
+}
+
+/// Desktop tab row drawing style.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum TabStyleConfig {
+    #[default]
+    Block,
+    Pill,
+}
+
+/// Theme tokens accepted by [`TabPillColor`].
+pub(crate) const TAB_PILL_PALETTE_TOKENS: &[&str] = &[
+    "accent", "text", "subtext0", "overlay0", "overlay1", "surface0", "surface1", "mauve", "green",
+    "yellow", "red", "blue", "teal", "peach",
+];
+
+/// A pill colour: a theme palette token name or `#RGB`/`#RRGGBB`.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(try_from = "String", into = "String")]
+pub struct TabPillColor(String);
+
+impl TabPillColor {
+    pub(crate) fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl TryFrom<String> for TabPillColor {
+    type Error = String;
+
+    fn try_from(value: String) -> Result<Self, Self::Error> {
+        if TAB_PILL_PALETTE_TOKENS.contains(&value.as_str())
+            || super::SidebarTokenColor::parse(&value).is_some()
+        {
+            Ok(Self(value))
+        } else {
+            Err(format!(
+                "unknown pill color {value:?}; use #RGB, #RRGGBB, or one of: {}",
+                TAB_PILL_PALETTE_TOKENS.join(", ")
+            ))
+        }
+    }
+}
+
+impl From<TabPillColor> for String {
+    fn from(color: TabPillColor) -> Self {
+        color.0
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(default)]
+pub struct TabPillConfig {
+    /// Tab number block backgrounds, cycled by tab position. Theme tokens follow the active theme.
+    /// Default: ["green", "blue", "peach", "mauve"].
+    pub index_colors: Vec<TabPillColor>,
+    /// Glyph drawn at the left end of each pill. Empty draws square ends. Default: "\u{e0b6}".
+    pub left_cap: String,
+    /// Glyph drawn at the right end of each pill. Empty draws square ends. Default: "\u{e0b4}".
+    pub right_cap: String,
+}
+
+impl Default for TabPillConfig {
+    fn default() -> Self {
+        Self {
+            index_colors: ["green", "blue", "peach", "mauve"]
+                .into_iter()
+                .map(|token| TabPillColor(token.into()))
+                .collect(),
+            left_cap: "\u{e0b6}".into(),
+            right_cap: "\u{e0b4}".into(),
+        }
+    }
 }
 
 pub(crate) fn parse_tab_bar_datetime_format(
@@ -63,7 +161,7 @@ pub(crate) fn tab_bar_right_diagnostics(entries: &[TabBarRightEntryConfig]) -> V
 
     for (index, entry) in entries.iter().enumerate().take(MAX_TAB_BAR_RIGHT_ENTRIES) {
         match entry {
-            TabBarRightEntryConfig::Datetime { format } => {
+            TabBarRightEntryConfig::Datetime { format, .. } => {
                 if format.is_empty() {
                     diagnostics.push(format!(
                         "ui.tab_bar_right[{index}] datetime format is empty; hiding entry"
@@ -76,6 +174,7 @@ pub(crate) fn tab_bar_right_diagnostics(entries: &[TabBarRightEntryConfig]) -> V
                 command,
                 interval_seconds,
                 timeout_seconds,
+                ..
             } => {
                 if command.trim().is_empty() {
                     diagnostics.push(format!(
@@ -103,8 +202,8 @@ pub(crate) fn tab_bar_right_diagnostics(entries: &[TabBarRightEntryConfig]) -> V
                     ));
                 }
             }
-            TabBarRightEntryConfig::Zoom
-            | TabBarRightEntryConfig::Hostname
+            TabBarRightEntryConfig::Zoom { .. }
+            | TabBarRightEntryConfig::Hostname { .. }
             | TabBarRightEntryConfig::Text { .. } => {}
         }
     }
@@ -152,19 +251,27 @@ entries = [
         let entries = vec![
             TabBarRightEntryConfig::Datetime {
                 format: "%Q".into(),
+                icon: None,
+                icon_bg: None,
             },
             TabBarRightEntryConfig::Datetime {
                 format: "%z".into(),
+                icon: None,
+                icon_bg: None,
             },
             TabBarRightEntryConfig::Command {
                 command: String::new(),
                 interval_seconds: 0,
                 timeout_seconds: 0,
+                icon: None,
+                icon_bg: None,
             },
             TabBarRightEntryConfig::Command {
                 command: "status.sh".into(),
                 interval_seconds: MAX_TAB_BAR_COMMAND_INTERVAL_SECONDS + 1,
                 timeout_seconds: MAX_TAB_BAR_COMMAND_TIMEOUT_SECONDS + 1,
+                icon: None,
+                icon_bg: None,
             },
         ];
 
@@ -177,5 +284,92 @@ entries = [
         assert!(diagnostics.contains("timeout_seconds must be at least 1"));
         assert!(diagnostics.contains("timeout_seconds may be at most"));
         assert!(parse_tab_bar_datetime_format("").is_err());
+    }
+
+    #[test]
+    fn pill_style_is_opt_in_with_nerd_font_defaults() {
+        let config: crate::config::Config = toml::from_str("[ui]\n").expect("empty ui");
+        assert_eq!(config.ui.tab_style, TabStyleConfig::Block);
+        assert_eq!(config.ui.tab_pill, TabPillConfig::default());
+        assert_eq!(config.ui.tab_pill.left_cap, "\u{e0b6}");
+        assert_eq!(config.ui.tab_pill.right_cap, "\u{e0b4}");
+        assert_eq!(
+            config
+                .ui
+                .tab_pill
+                .index_colors
+                .iter()
+                .map(TabPillColor::as_str)
+                .collect::<Vec<_>>(),
+            ["green", "blue", "peach", "mauve"]
+        );
+
+        let config: crate::config::Config = toml::from_str(
+            r##"
+[ui]
+tab_style = "pill"
+tab_bar_right = [
+  { type = "command", command = "basename \"$PWD\"", icon = "\uf07b", icon_bg = "mauve" },
+  { type = "zoom", icon = "Z" },
+  { type = "hostname" },
+]
+
+[ui.tab_pill]
+index_colors = ["teal", "#abc", "#a1b2c3"]
+left_cap = ""
+"##,
+        )
+        .expect("pill config");
+        assert_eq!(config.ui.tab_style, TabStyleConfig::Pill);
+        assert_eq!(config.ui.tab_pill.index_colors.len(), 3);
+        assert_eq!(config.ui.tab_pill.left_cap, "");
+        assert_eq!(config.ui.tab_pill.right_cap, "\u{e0b4}");
+        let icons = config
+            .ui
+            .tab_bar_right
+            .iter()
+            .map(|entry| {
+                let (icon, bg) = entry.pill_icon();
+                (icon, bg.map(TabPillColor::as_str))
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(
+            icons,
+            [
+                (Some("\u{f07b}"), Some("mauve")),
+                (Some("Z"), None),
+                (None, None)
+            ]
+        );
+    }
+
+    #[test]
+    fn pill_config_rejects_unknown_colors_and_wrong_types() {
+        for (toml, expected) in [
+            (
+                "[ui.tab_pill]\nindex_colors = [\"pink\"]\n",
+                "unknown pill color",
+            ),
+            (
+                "[ui.tab_pill]\nindex_colors = [\"#12\"]\n",
+                "unknown pill color",
+            ),
+            ("[ui.tab_pill]\nindex_colors = \"green\"\n", "invalid type"),
+            ("[ui.tab_pill]\nleft_cap = 1\n", "invalid type"),
+            ("[ui]\ntab_style = \"round\"\n", "unknown variant"),
+            (
+                "[ui]\ntab_bar_right = [{ type = \"hostname\", icon_bg = \"pink\" }]\n",
+                "unknown pill color",
+            ),
+            (
+                "[ui]\ntab_bar_right = [{ type = \"hostname\", icon = 1 }]\n",
+                "invalid type",
+            ),
+        ] {
+            let err = toml::from_str::<crate::config::Config>(toml)
+                .expect_err(toml)
+                .to_string();
+            assert!(err.contains(expected), "{toml}: {err}");
+        }
     }
 }
