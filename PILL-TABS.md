@@ -1,8 +1,9 @@
 # Pill tabs (personal fork)
 
-This branch (`pill-tabs`) adds two commits, `feat: pill tab style` and
-`feat: pane user-var pill`, on top of an upstream herdr release tag. Never open PRs, issues or comments on
-`herdrdev/herdr`, and never push there.
+This branch (`pill-tabs`) adds three commits, `feat: pill tab style`,
+`feat: pane user-var pill` and `feat: kolada theme`, on top of an upstream
+herdr release tag. Never open PRs, issues or comments on `herdrdev/herdr`, and
+never push there.
 
 ## Rebase onto a new upstream release
 
@@ -52,28 +53,13 @@ index_colors = ["green", "blue", "peach", "mauve"]
 left_cap = "\ue0b6"           # "" for terminals without Nerd Fonts
 right_cap = "\ue0b4"
 
-# Kolada (https://github.com/KaliaHayes/Kolada-VS-Code-Theme) as herdr theme
-# overrides. The pills pick these up through the tokens above.
+# Kolada (https://github.com/KaliaHayes/Kolada-VS-Code-Theme) is a built-in
+# theme on this branch. The pills pick up its colors through the tokens above.
+[theme]
+name = "kolada"
+
 [theme.custom]
-accent = "#ffb85c"
-panel_bg = "#000000"
-sidebar_bg = "#000000"
-active_row_bg = "#101010"
-selection_bg = "#141414"
-surface0 = "#141414"
-surface1 = "#1e1e1e"
-surface_dim = "#101010"
-overlay0 = "#888888"
-overlay1 = "#a6a6a6"
-text = "#ffffff"
-subtext0 = "#dddddd"
-mauve = "#af8bff"
-green = "#32feaf"
-yellow = "#ffe779"
-red = "#ff8888"
-blue = "#5cd4ff"
-teal = "#aaefff"
-peach = "#ffb85c"
+panel_bg = "reset"            # follow the host terminal background instead of #000000
 ```
 
 Each tab is drawn as `(n name)`: a colored number block, then the name on a
