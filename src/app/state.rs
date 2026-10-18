@@ -524,6 +524,31 @@ impl Palette {
         }
     }
 
+    /// Kolada — black background with warm orange and neon accents.
+    pub fn kolada() -> Self {
+        Self {
+            accent: Color::Rgb(255, 184, 92),
+            panel_bg: Color::Rgb(0, 0, 0),
+            sidebar_bg: Color::Reset,
+            active_row_bg: Color::Rgb(16, 16, 16),
+            selection_bg: Color::Rgb(20, 20, 20),
+            surface0: Color::Rgb(20, 20, 20),
+            surface1: Color::Rgb(30, 30, 30),
+            surface_dim: Color::Rgb(16, 16, 16),
+            overlay0: Color::Rgb(136, 136, 136),
+            overlay1: Color::Rgb(166, 166, 166),
+            text: Color::Rgb(255, 255, 255),
+            subtext0: Color::Rgb(221, 221, 221),
+            mauve: Color::Rgb(175, 139, 255),
+            green: Color::Rgb(50, 254, 175),
+            yellow: Color::Rgb(255, 231, 121),
+            red: Color::Rgb(255, 136, 136),
+            blue: Color::Rgb(92, 212, 255),
+            teal: Color::Rgb(170, 239, 255),
+            peach: Color::Rgb(255, 184, 92),
+        }
+    }
+
     /// Resolve a theme by name. Returns None for unknown names.
     pub fn from_name(name: &str) -> Option<Self> {
         match crate::config::canonical_theme_name(name)? {
@@ -545,6 +570,7 @@ impl Palette {
             "rose-pine" => Some(Self::rose_pine()),
             "rose-pine-dawn" => Some(Self::rose_pine_dawn()),
             "vesper" => Some(Self::vesper()),
+            "kolada" => Some(Self::kolada()),
             _ => None,
         }
     }
@@ -1496,6 +1522,20 @@ mod tests {
         assert_eq!(palette.sidebar_bg, Color::Rgb(24, 24, 37));
         assert_eq!(palette.active_row_bg, Color::Rgb(49, 50, 68));
         assert_eq!(palette.selection_bg, Color::Rgb(69, 71, 90));
+    }
+
+    #[test]
+    fn kolada_theme_resolves_with_its_palette() {
+        assert!(crate::config::THEME_NAMES.contains(&"kolada"));
+        assert_eq!(
+            crate::config::canonical_theme_name("Kolada"),
+            Some("kolada")
+        );
+        let palette = Palette::from_name("kolada").unwrap();
+        assert_eq!(palette.panel_bg, Color::Rgb(0, 0, 0));
+        assert_eq!(palette.accent, Color::Rgb(255, 184, 92));
+        assert_eq!(palette.mauve, Color::Rgb(175, 139, 255));
+        assert_eq!(palette.teal, Color::Rgb(170, 239, 255));
     }
 
     #[test]
